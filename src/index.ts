@@ -5,6 +5,7 @@ import { autocompleteApplications, emptyAutocomplete, parseStatusOptions } from 
 import { completeStatus } from './status';
 import { parseEdit, parseEditOptions } from './edit-form';
 import { completeEdit, openEdit } from './edits';
+import { completeDeletion, openDelete, parseDeleteButton } from './deletions';
 
 function privateReply(content: string): Response {
 	return Response.json({ type: 4, data: { content, flags: 64 } });
@@ -79,6 +80,23 @@ export default {
 			return Response.json({ type: 1 });
 		}
 		const data = 'data' in interaction ? interaction.data : null;
+		const isDeleteCommand = interaction.type === 2 && isRecord(data) && data.type === 1 && data.name === 'delete';
+		const isDeleteButton = interaction.type === 3 && isRecord(data) && typeof data.custom_id === 'string' && data.custom_id.startsWith('delete:');
+		if (isDeleteCommand || isDeleteButton) {
+			const user = resolveUserForum(interaction, env);
+			if (!user) return privateReply('You do not have access to this tracker in this server.');
+			if (!('application_id' in interaction) || interaction.application_id !== env.DISCORD_APPLICATION_ID ||
+				!('id' in interaction) || !isDiscordId(interaction.id)) return privateReply('Invalid delete request. Run /delete again.');
+			if (isDeleteCommand) {
+				const app = parseEditOptions(data);
+				return app ? openDelete(app, user, interaction.id, env) : privateReply('Select one of your saved applications to delete.');
+			}
+			const input = parseDeleteButton(data);
+			if (!input || !('token' in interaction) || typeof interaction.token !== 'string' || !interaction.token || interaction.token.length > 512)
+				return privateReply('Invalid delete confirmation. Run /delete again.');
+			ctx.waitUntil(completeDeletion(input.promptId, input.action, user, interaction.token, env));
+			return Response.json({ type: 6 });
+		}
 		const isEditCommand = interaction.type === 2 && isRecord(data) && data.type === 1 && data.name === 'edit';
 		const isEditSubmit = interaction.type === 5 && isRecord(data) && typeof data.custom_id === 'string' && data.custom_id.startsWith('edit:');
 		if (isEditCommand || isEditSubmit) {
@@ -108,7 +126,7 @@ export default {
 			ctx.waitUntil(completeStatus(input,user,interaction.id,interaction.token,env));
 			return Response.json({type:5,data:{flags:64}});
 		}
-		if (interaction.type === 4 && isRecord(data) && data.type === 1 && (data.name === 'status' || data.name === 'edit')) {
+		if (interaction.type === 4 && isRecord(data) && data.type === 1 && (data.name === 'status' || data.name === 'edit' || data.name === 'delete')) {
 			const user = resolveUserForum(interaction, env);
 			if (!user || !('application_id' in interaction) || interaction.application_id !== env.DISCORD_APPLICATION_ID ||
 				!('id' in interaction) || !isDiscordId(interaction.id)) return emptyAutocomplete();

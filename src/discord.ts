@@ -10,11 +10,11 @@ export async function discordRequest(path: string, token: string | null, method 
 	});
 }
 
-export async function editPrivateReply(content: string, interactionToken: string, env: Env, command: 'apply' | 'status' | 'edit', timeoutMs = 5000): Promise<void> {
+export async function editPrivateReply(content: string, interactionToken: string, env: Env, command: 'apply' | 'status' | 'edit' | 'delete', timeoutMs = 5000): Promise<void> {
 	const failureMessage = `${command}: private reply delivery failed; check the Forum and database before resubmitting.`;
 	try {
 		const response = await discordRequest(`/webhooks/${env.DISCORD_APPLICATION_ID}/${encodeURIComponent(interactionToken)}/messages/@original`, null, 'PATCH', {
-			content, allowed_mentions: noMentions,
+			content, allowed_mentions: noMentions, ...(command === 'delete' ? { components: [] } : {}),
 		}, timeoutMs);
 		if (!response.ok) {
 			let discordCode: number | null = null;

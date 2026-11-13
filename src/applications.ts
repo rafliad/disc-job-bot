@@ -19,12 +19,18 @@ export async function saveApplication(input: ApplicationInput, user: UserForum, 
 	try {
 		const inserted = await db.prepare(`
 			INSERT INTO applications (id, owner_discord_id, forum_channel_id, company, position, job_url, notes, applied_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING
-		`).bind(input.id, user.ownerDiscordId, user.forumChannelId, input.company, input.position, input.jobUrl, input.notes, appliedAt).run();
+			SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (
+				SELECT 1 FROM application_deletions WHERE application_id = ? AND state = 'complete'
+			) ON CONFLICT(id) DO NOTHING
+		`).bind(input.id, user.ownerDiscordId, user.forumChannelId, input.company, input.position, input.jobUrl, input.notes, appliedAt, input.id).run();
 		if (inserted.meta.changes === 0) {
 			const existing = await db.prepare('SELECT discord_thread_id, status FROM applications WHERE id = ? AND owner_discord_id = ?')
 				.bind(input.id, user.ownerDiscordId).first<{ discord_thread_id: string | null; status: string }>();
 			if (existing?.discord_thread_id) return `This application is already saved — ${existing.status}. ${postLink(env, existing.discord_thread_id)}`;
+			const removed = await db.prepare(`SELECT id FROM application_deletions
+				WHERE application_id = ? AND owner_discord_id = ? AND state = 'complete' LIMIT 1`)
+				.bind(input.id, user.ownerDiscordId).first();
+			if (removed) return 'This application was deleted. Use /apply to start a new application.';
 			return `This application is still processing or needs checking. Do not submit again until checked. Reference: ${input.id}.`;
 		}
 	} catch {

@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { test as nodeTest } from 'node:test';
 
 const commandDefinitions = [
+	{ name: 'delete', description: 'Permanently delete one of your job applications.', options: [
+		{ type: 3, name: 'application', description: 'Your job application', required: true, autocomplete: true },
+	] },
 	{ name: 'edit', description: 'Edit details of one of your job applications.', options: [
 		{ type: 3, name: 'application', description: 'Your job application', required: true, autocomplete: true },
 	] },
