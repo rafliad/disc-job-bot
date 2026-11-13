@@ -2,9 +2,9 @@
 
 A private Discord job application tracker for two users. The working MVP uses
 `/apply`, `/status`, separate Discord Forum Channels, and Cloudflare D1. The first
-post-MVP upgrade adds `/edit` for correcting application details.
+post-MVP upgrades add `/edit` for corrections and `/delete` for mistaken entries.
 
-## Current upgrade: edit application details
+## Worker and commands
 
 This change implements the Discord Interactions endpoint at the Worker's root URL:
 
@@ -27,6 +27,10 @@ This change implements the Discord Interactions endpoint at the Worker's root UR
 - `/edit application:…` opens a prefilled, owner-bound modal. Saving updates the
   same Forum post title/starter details and D1, preserving status, dates, tags,
   history and thread identity. Blank URL/notes inputs clear those fields.
+- `/delete application:…` privately offers Delete and Cancel for one owned
+  application. Delete permanently removes the Forum post, its thread history,
+  and the saved application. Use `/status Withdrawn` to keep a real application
+  and its history after you stop pursuing it.
 - Signed malformed payloads and interaction types not implemented yet return 400.
 - A missing or malformed configured public key returns 500 for a signed request.
 - Other paths return 404; unsupported methods at `/` return 405.
@@ -34,8 +38,74 @@ This change implements the Discord Interactions endpoint at the Worker's root UR
 M3 endpoint registration and M4's live database/Forum `/test` reply have been
 confirmed by the project owner. M5 `/apply` also passed its live check after fixing
 the Worker redirect option and correcting the private Forum mapping. M6 `/status`
-was merged and the owner confirmed the MVP works. `/edit` is implemented and
-tested here; its live check remains after this upgrade is merged and deployed.
+was merged and the owner confirmed the MVP works. The `/edit` upgrade is also
+merged. Live verification of `/delete` follows its deployment.
+
+## Deploy and try `/delete`
+
+After merging, run from the project folder:
+
+```powershell
+git switch master
+git pull --ff-only origin master
+npm ci
+npx wrangler d1 migrations apply disc-tracker-db --remote
+npm run deploy
+npm run register:delete -- YOUR_SERVER_ID
+```
+
+Apply `0004_application_deletions.sql` before deploying. It preserves current
+data and adds confirmations and deletion receipts. No new secrets are needed.
+The bot needs its existing View Channel and Manage Threads permissions in both
+Forums. Registration upserts only the guild's `/delete` command.
+
+1. Create a disposable application with `/apply`. Open `/delete` and select it.
+2. Verify the private prompt identifies the company, role, and exact Forum post. Click **Cancel**;
+   the post and application should still exist.
+3. Open a fresh prompt and click **Delete**. Expect a private success message,
+   the Forum post to disappear, and the entry to leave the application pickers.
+4. Try confirming an older prompt after editing the same application. It should
+   be refused; an unused prompt also expires after 10 minutes.
+
+## Delete failures and recovery
+
+The Worker verifies the mapped Forum and the exact child thread before sending
+Discord a DELETE. It removes the D1 application and its dependent edit/status
+records only after Discord confirms the matching thread was deleted. A receipt
+with IDs and revision metadata, but no company, role, URL or notes, blocks
+delayed delivery of the original `/apply` modal. Opening a confirmation does not
+lock the application; confirmed deletion shares the edit/status claim.
+
+If the private reply says deletion needs checking, keep its reference. If a
+prompt never finishes, click again after a minute to see the recovery reference;
+this does not retry the deletion. After the invocation has stopped, verify the
+exact thread ID in the correct Forum
+with an account that can view it, then inspect the corresponding D1 claim:
+
+```sql
+SELECT d.id, d.application_id, d.discord_thread_id, d.state, d.failure_stage,
+       a.status_change_id
+FROM application_deletions d
+JOIN applications a ON a.id = d.application_id
+ AND a.owner_discord_id = d.owner_discord_id
+ AND a.forum_channel_id = d.forum_channel_id
+ AND a.discord_thread_id = d.discord_thread_id
+ AND a.status_change_id = d.id
+WHERE d.id = 'DELETE_REFERENCE' AND d.owner_discord_id = 'OWNER_ID'
+  AND d.state IN ('pending', 'needs_check');
+```
+
+- **Post still exists:** mark this receipt `failed` and clear its matching
+  application claim. A new `/delete` confirmation can then be opened.
+- **Post is confirmed gone:** mark this receipt `complete` and delete only its
+  matching application row. Keep the completed receipt so a delayed `/apply`
+  cannot recreate it.
+- **Post state is still unclear:** leave the claim in place. An access error
+  alone does not prove deletion.
+
+Use an atomic D1 batch for either resolution, guarding both statements by the
+same owner, Forum, application, thread, and claim IDs from the inspected row.
+Never clear a claim while its invocation is still running.
 
 ## Deploy and try `/edit`
 
@@ -83,7 +153,9 @@ Inputs have the same limits and URL validation as `/apply`.
 ## Edit failures and recovery
 
 The legacy `applications.status_change_id` column now holds either a status
-attempt ID or an edit form ID. Both commands/autocomplete honor this same claim.
+attempt ID, an edit form ID, or a deletion receipt ID. All three commands and
+their autocomplete handlers honor this claim. Use the delete recovery above
+for receipts in `application_deletions`.
 Look in `status_changes` for a status attempt and `application_edits` for an edit;
 do not clear the slot merely because a status-only join returned no result.
 

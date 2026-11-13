@@ -22,8 +22,8 @@ export function parseStatusOptions(data: unknown): StatusInput | null {
 	return isDiscordId(applicationId) && isStatus(status) ? { applicationId, status } : null;
 }
 
-export async function autocompleteApplications(data: unknown, user: UserForum, env: Env, command: 'status' | 'edit' = 'status'): Promise<Response> {
-	const allowed = command === 'edit' ? ['application'] : ['application','status'];
+export async function autocompleteApplications(data: unknown, user: UserForum, env: Env, command: 'status' | 'edit' | 'delete' = 'status'): Promise<Response> {
+	const allowed = command === 'status' ? ['application','status'] : ['application'];
 	if (!isRecord(data) || !Array.isArray(data.options) || data.options.length > allowed.length) return emptyAutocomplete();
 	const seen = new Set<string>();
 	let query: string | null = null;

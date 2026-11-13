@@ -80,7 +80,7 @@ describe('application migration', () => {
 		await insert('existing',undefined,'666666666666666666').run();
 		await db.prepare(`INSERT INTO status_changes (id,application_id,from_status,to_status,state) VALUES ('previous','existing','Applied','Offer','complete')`).run();
 		const before=await db.prepare('SELECT * FROM applications').first();const previous=await db.prepare('SELECT * FROM status_changes').first();
-		await applyD1Migrations(db,migrations,'edit_upgrade_migrations');
+		await applyD1Migrations(db,migrations.slice(0,3),'edit_upgrade_migrations');
 		expect(await db.prepare('SELECT * FROM applications').first()).toEqual({...before,details_version:0});
 		expect(await db.prepare('SELECT * FROM status_changes').first()).toEqual(previous);
 		expect(await db.prepare('SELECT COUNT(*) AS count FROM application_edits').first('count')).toBe(0);
